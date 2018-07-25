@@ -11,7 +11,7 @@ const chai = require('chai'),
   config = require(__dirname + '/../config/config'),
   moment = require('moment'),
   Transaction = require(__dirname + '/../../lib/transaction'),
-  Utils = require(__dirname + '/../../lib/utils'),
+  logger = require(__dirname + '/../../lib/utils/logger'),
   sinon = require('sinon'),
   semver = require('semver'),
   current = Support.sequelize;
@@ -30,7 +30,7 @@ const qq = function(str) {
 describe(Support.getTestDialectTeaser('Sequelize'), () => {
   describe('constructor', () => {
     afterEach(() => {
-      Utils.deprecate.restore && Utils.deprecate.restore();
+      logger.deprecate.restore && logger.deprecate.restore();
     });
 
     if (dialect !== 'sqlite') {
@@ -58,17 +58,6 @@ describe(Support.getTestDialectTeaser('Sequelize'), () => {
       const sequelize = Support.createSequelizeInstance({ host: '127.0.0.1', port: 1234 });
       expect(sequelize.config.port).to.equal(1234);
       expect(sequelize.config.host).to.equal('127.0.0.1');
-    });
-
-
-    it('should log deprecated warning if operators aliases were not set', () => {
-      sinon.stub(Utils, 'deprecate');
-      Support.createSequelizeInstance();
-      expect(Utils.deprecate.calledOnce).to.be.true;
-      expect(Utils.deprecate.args[0][0]).to.be.equal('String based operators are now deprecated. Please use Symbol based operators for better security, read more at http://docs.sequelizejs.com/manual/tutorial/querying.html#operators');
-      Utils.deprecate.reset();
-      Support.createSequelizeInstance({ operatorsAliases: {} });
-      expect(Utils.deprecate.called).to.be.false;
     });
 
     it('should set operators aliases on dialect QueryGenerator', () => {
@@ -152,7 +141,8 @@ describe(Support.getTestDialectTeaser('Sequelize'), () => {
                 err.message.match(/connect ECONNREFUSED/) ||
                 err.message.match(/invalid port number/) ||
                 err.message.match(/should be >=? 0 and < 65536/) ||
-                err.message.match(/Login failed for user/)
+                err.message.match(/Login failed for user/) ||
+                err.message.match(/Port must be > 0 and < 65536/)
               ).to.be.ok;
             });
         });
@@ -273,6 +263,23 @@ describe(Support.getTestDialectTeaser('Sequelize'), () => {
       return this.sequelize.query(this.insertQuery);
     });
 
+    it('executes a query if a placeholder value is an array', function() {
+      return this.sequelize.query(`INSERT INTO ${qq(this.User.tableName)} (username, email_address, ` +
+        `${qq('createdAt')}, ${qq('updatedAt')}) VALUES ?;`, {
+        replacements: [[
+          ['john', 'john@gmail.com', '2012-01-01 10:10:10', '2012-01-01 10:10:10'],
+          ['michael', 'michael@gmail.com', '2012-01-01 10:10:10', '2012-01-01 10:10:10']
+        ]]
+      })
+        .then(() => this.sequelize.query(`SELECT * FROM ${qq(this.User.tableName)};`, {
+          type: this.sequelize.QueryTypes.SELECT
+        }))
+        .then(rows => {
+          expect(rows).to.be.lengthOf(2);
+          expect(rows[0].username).to.be.equal('john');
+          expect(rows[1].username).to.be.equal('michael');
+        });
+    });
 
     describe('logging', () => {
       it('executes a query with global benchmarking option and default logger', () => {
@@ -1140,7 +1147,7 @@ describe(Support.getTestDialectTeaser('Sequelize'), () => {
 
       it('through Sequelize.sync()', function() {
         const self = this;
-        self.spy.reset();
+        self.spy.resetHistory();
         return this.sequelize.sync({ force: true, logging: false }).then(() => {
           expect(self.spy.notCalled).to.be.true;
         });
@@ -1148,7 +1155,7 @@ describe(Support.getTestDialectTeaser('Sequelize'), () => {
 
       it('through DAOFactory.sync()', function() {
         const self = this;
-        self.spy.reset();
+        self.spy.resetHistory();
         return this.User.sync({ force: true, logging: false }).then(() => {
           expect(self.spy.notCalled).to.be.true;
         });
@@ -1195,6 +1202,16 @@ describe(Support.getTestDialectTeaser('Sequelize'), () => {
       });
 
       expect(Project).to.exist;
+    });
+  });
+
+  describe('define', () => {
+    it('raises an error if no values are defined', function() {
+      expect(() => {
+        this.sequelize.define('omnomnom', {
+          bla: { type: DataTypes.ARRAY }
+        });
+      }).to.throw(Error, 'ARRAY is missing type definition for its values.');
     });
   });
 

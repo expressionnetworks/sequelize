@@ -3,7 +3,8 @@
 const Support   = require(__dirname + '/../support'),
   expectsql = Support.expectsql,
   current   = Support.sequelize,
-  sql       = current.dialect.QueryGenerator;
+  sql       = current.dialect.QueryGenerator,
+  Op        = current.Op;
 
 // Notice: [] will be replaced by dialect specific tick/quote character when there is not dialect specific expectation but only a default expectation
 
@@ -36,7 +37,7 @@ suite(Support.getTestDialectTeaser('SQL'), () => {
       }
     });
 
-    test('type and method', () => {
+    test('type and using', () => {
       expectsql(sql.addIndexQuery('User', ['fieldC'], {
         type: 'FULLTEXT',
         concurrently: true
@@ -50,7 +51,7 @@ suite(Support.getTestDialectTeaser('SQL'), () => {
       expectsql(sql.addIndexQuery('User', ['fieldB', {attribute: 'fieldA', collate: 'en_US', order: 'DESC', length: 5}], {
         name: 'a_b_uniq',
         unique: true,
-        method: 'BTREE',
+        using: 'BTREE',
         parser: 'foo'
       }), {
         sqlite: 'CREATE UNIQUE INDEX `a_b_uniq` ON `User` (`fieldB`, `fieldA` COLLATE `en_US` DESC)',
@@ -103,7 +104,7 @@ suite(Support.getTestDialectTeaser('SQL'), () => {
           fields: ['type'],
           where: {
             type: {
-              $or: [
+              [Op.or]: [
                 'group',
                 'private'
               ]
@@ -119,7 +120,7 @@ suite(Support.getTestDialectTeaser('SQL'), () => {
           fields: ['type'],
           where: {
             type: {
-              $ne: null
+              [Op.ne]: null
             }
           }
         }), {

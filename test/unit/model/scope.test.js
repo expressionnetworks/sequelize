@@ -229,7 +229,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
       });
     });
 
-    it('should emit an error for scopes that dont exist', () => {
+    it("should emit an error for scopes that don't exist", () => {
       expect(() => {
         Company.scope('doesntexist');
       }).to.throw('Invalid scope doesntexist called.');
@@ -292,6 +292,14 @@ describe(Support.getTestDialectTeaser('Model'), () => {
       expect(() => {
         Company.addScope('defaultScope', {});
       }).to.throw('The scope defaultScope already exists. Pass { override: true } as options to silence this error');
+    });
+
+    it('should not warn if default scope is not defined', () => {
+      const Model = current.define('model');
+    
+      expect(() => {
+        Model.addScope('defaultScope', {});
+      }).not.to.throw();
     });
 
     it('allows me to override a default scope', () => {

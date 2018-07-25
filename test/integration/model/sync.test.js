@@ -3,7 +3,8 @@
 const chai = require('chai'),
   Sequelize = require('../../../index'),
   expect = chai.expect,
-  Support = require(__dirname + '/../support');
+  Support = require(__dirname + '/../support'),
+  dialect = Support.getTestDialect();
 
 describe(Support.getTestDialectTeaser('Model'), () => {
   describe('sync', () => {
@@ -17,7 +18,8 @@ describe(Support.getTestDialectTeaser('Model'), () => {
     it('should remove a column if it exists in the databases schema but not the model', function() {
       const User = this.sequelize.define('testSync', {
         name: Sequelize.STRING,
-        age: Sequelize.INTEGER
+        age: Sequelize.INTEGER,
+        badgeNumber: { type: Sequelize.INTEGER, field: 'badge_number' }
       });
       return this.sequelize.sync()
         .then(() => {
@@ -29,6 +31,8 @@ describe(Support.getTestDialectTeaser('Model'), () => {
         .then(() => User.describe())
         .then(data => {
           expect(data).to.not.have.ownProperty('age');
+          expect(data).to.not.have.ownProperty('badge_number');
+          expect(data).to.not.have.ownProperty('badgeNumber');
           expect(data).to.have.ownProperty('name');
         });
     });
@@ -40,11 +44,33 @@ describe(Support.getTestDialectTeaser('Model'), () => {
       return this.sequelize.sync()
         .then(() => this.sequelize.define('testSync', {
           name: Sequelize.STRING,
-          age: Sequelize.INTEGER
+          age: Sequelize.INTEGER,
+          height: { type: Sequelize.INTEGER, field: 'height_cm' }
         }))
         .then(() => this.sequelize.sync({alter: true}))
         .then(() => testSync.describe())
-        .then(data => expect(data).to.have.ownProperty('age'));
+        .then(data => {
+          expect(data).to.have.ownProperty('age');
+          expect(data).to.have.ownProperty('height_cm');
+          expect(data).not.to.have.ownProperty('height');
+        });
+    });
+
+    it('should alter a column using the correct column name (#9515)', function() {
+      const testSync = this.sequelize.define('testSync', {
+        name: Sequelize.STRING
+      });
+      return this.sequelize.sync()
+        .then(() => this.sequelize.define('testSync', {
+          name: Sequelize.STRING,
+          badgeNumber: { type: Sequelize.INTEGER, field: 'badge_number' }
+        }))
+        .then(() => this.sequelize.sync({alter: true}))
+        .then(() => testSync.describe())
+        .then(data => {
+          expect(data).to.have.ownProperty('badge_number');
+          expect(data).not.to.have.ownProperty('badgeNumber');
+        });
     });
 
     it('should change a column if it exists in the model but is different in the database', function() {
@@ -126,6 +152,228 @@ describe(Support.getTestDialectTeaser('Model'), () => {
 
       return this.sequelize.sync({ alter: true })
         .then(() => this.sequelize.sync({ alter: true }));
+    });
+
+    describe('indexes', () => {
+      describe('with alter:true', () => {
+        it('should not duplicate named indexes after multiple sync calls', function() {
+          const User = this.sequelize.define('testSync', {
+            email: {
+              type: Sequelize.STRING
+            },
+            phone: {
+              type: Sequelize.STRING
+            },
+            mobile: {
+              type: Sequelize.STRING
+            }
+          }, {
+            indexes: [
+              { name: 'another_index_email_mobile', fields: ['email', 'mobile'] },
+              { name: 'another_index_phone_mobile', fields: ['phone', 'mobile'], unique: true },
+              { name: 'another_index_email', fields: ['email'] },
+              { name: 'another_index_mobile', fields: ['mobile'] },
+            ]
+          });
+
+          return User.sync({ sync: true })
+            .then(() => User.sync({ alter: true }))
+            .then(() => User.sync({ alter: true }))
+            .then(() => User.sync({ alter: true }))
+            .then(() => this.sequelize.getQueryInterface().showIndex(User.getTableName()))
+            .then(results => {
+              if (dialect === 'sqlite') {
+                // SQLite doesn't treat primary key as index
+                expect(results).to.have.length(4);
+              } else {
+                expect(results).to.have.length(4 + 1);
+                expect(results.filter(r => r.primary)).to.have.length(1);
+              }
+
+              expect(results.filter(r => r.name === 'another_index_email_mobile')).to.have.length(1);
+              expect(results.filter(r => r.name === 'another_index_phone_mobile')).to.have.length(1);
+              expect(results.filter(r => r.name === 'another_index_email')).to.have.length(1);
+              expect(results.filter(r => r.name === 'another_index_mobile')).to.have.length(1);
+            });
+        });
+
+        it('should not duplicate unnamed indexes after multiple sync calls', function() {
+          const User = this.sequelize.define('testSync', {
+            email: {
+              type: Sequelize.STRING
+            },
+            phone: {
+              type: Sequelize.STRING
+            },
+            mobile: {
+              type: Sequelize.STRING
+            }
+          }, {
+            indexes: [
+              { fields: ['email', 'mobile'] },
+              { fields: ['phone', 'mobile'], unique: true },
+              { fields: ['email'] },
+              { fields: ['mobile'] },
+            ]
+          });
+
+          return User.sync({ sync: true })
+            .then(() => User.sync({ alter: true }))
+            .then(() => User.sync({ alter: true }))
+            .then(() => User.sync({ alter: true }))
+            .then(() => this.sequelize.getQueryInterface().showIndex(User.getTableName()))
+            .then(results => {
+              if (dialect === 'sqlite') {
+                // SQLite doesn't treat primary key as index
+                expect(results).to.have.length(4);
+              } else {
+                expect(results).to.have.length(4 + 1);
+                expect(results.filter(r => r.primary)).to.have.length(1);
+              }
+            });
+        });
+      });
+
+      it('should create only one unique index for unique:true column', function() {
+        const User = this.sequelize.define('testSync', {
+          email: {
+            type: Sequelize.STRING,
+            unique: true
+          }
+        });
+
+        return User.sync({ force: true }).then(() => {
+          return this.sequelize.getQueryInterface().showIndex(User.getTableName());
+        }).then(results => {
+          if (dialect === 'sqlite') {
+            // SQLite doesn't treat primary key as index
+            expect(results).to.have.length(1);
+          } else {
+            expect(results).to.have.length(2);
+            expect(results.filter(r => r.primary)).to.have.length(1);
+          }
+
+          expect(results.filter(r => r.unique === true && r.primary === false)).to.have.length(1);
+        });
+      });
+
+      it('should create only one unique index for unique:true columns', function() {
+        const User = this.sequelize.define('testSync', {
+          email: {
+            type: Sequelize.STRING,
+            unique: true
+          },
+          phone: {
+            type: Sequelize.STRING,
+            unique: true
+          }
+        });
+
+        return User.sync({ force: true }).then(() => {
+          return this.sequelize.getQueryInterface().showIndex(User.getTableName());
+        }).then(results => {
+          if (dialect === 'sqlite') {
+            // SQLite doesn't treat primary key as index
+            expect(results).to.have.length(2);
+          } else {
+            expect(results).to.have.length(3);
+            expect(results.filter(r => r.primary)).to.have.length(1);
+          }
+
+          expect(results.filter(r => r.unique === true && r.primary === false)).to.have.length(2);
+        });
+      });
+
+      it('should create only one unique index for unique:true columns taking care of options.indexes', function() {
+        const User = this.sequelize.define('testSync', {
+          email: {
+            type: Sequelize.STRING,
+            unique: true
+          },
+          phone: {
+            type: Sequelize.STRING,
+            unique: true
+          }
+        }, {
+          indexes: [
+            { name: 'wow_my_index', fields: ['email', 'phone'], unique: true }
+          ]
+        });
+
+        return User.sync({ force: true }).then(() => {
+          return this.sequelize.getQueryInterface().showIndex(User.getTableName());
+        }).then(results => {
+          if (dialect === 'sqlite') {
+            // SQLite doesn't treat primary key as index
+            expect(results).to.have.length(3);
+          } else {
+            expect(results).to.have.length(4);
+            expect(results.filter(r => r.primary)).to.have.length(1);
+          }
+
+          expect(results.filter(r => r.unique === true && r.primary === false)).to.have.length(3);
+          expect(results.filter(r => r.name === 'wow_my_index')).to.have.length(1);
+        });
+      });
+
+      it('should create only one unique index for unique:name column', function() {
+        const User = this.sequelize.define('testSync', {
+          email: {
+            type: Sequelize.STRING,
+            unique: 'wow_my_index'
+          }
+        });
+
+        return User.sync({ force: true }).then(() => {
+          return this.sequelize.getQueryInterface().showIndex(User.getTableName());
+        }).then(results => {
+          if (dialect === 'sqlite') {
+            // SQLite doesn't treat primary key as index
+            expect(results).to.have.length(1);
+          } else {
+            expect(results).to.have.length(2);
+            expect(results.filter(r => r.primary)).to.have.length(1);
+          }
+
+          expect(results.filter(r => r.unique === true && r.primary === false)).to.have.length(1);
+
+          if (['postgres', 'sqlite'].indexOf(dialect) === -1) {
+            // Postgres/SQLite doesn't support naming indexes in create table
+            expect(results.filter(r => r.name === 'wow_my_index')).to.have.length(1);
+          }
+        });
+      });
+
+      it('should create only one unique index for unique:name columns', function() {
+        const User = this.sequelize.define('testSync', {
+          email: {
+            type: Sequelize.STRING,
+            unique: 'wow_my_index'
+          },
+          phone: {
+            type: Sequelize.STRING,
+            unique: 'wow_my_index'
+          }
+        });
+
+        return User.sync({ force: true }).then(() => {
+          return this.sequelize.getQueryInterface().showIndex(User.getTableName());
+        }).then(results => {
+          if (dialect === 'sqlite') {
+            // SQLite doesn't treat primary key as index
+            expect(results).to.have.length(1);
+          } else {
+            expect(results).to.have.length(2);
+            expect(results.filter(r => r.primary)).to.have.length(1);
+          }
+
+          expect(results.filter(r => r.unique === true && r.primary === false)).to.have.length(1);
+          if (['postgres', 'sqlite'].indexOf(dialect) === -1) {
+            // Postgres/SQLite doesn't support naming indexes in create table
+            expect(results.filter(r => r.name === 'wow_my_index')).to.have.length(1);
+          }
+        });
+      });
     });
   });
 });

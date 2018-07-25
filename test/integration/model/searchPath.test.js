@@ -4,6 +4,7 @@ const chai = require('chai');
 const expect = chai.expect;
 const Support = require(__dirname + '/../support');
 const DataTypes = require(__dirname + '/../../../lib/data-types');
+const Op = Support.Sequelize.Op;
 
 const SEARCH_PATH_ONE = 'schema_one,public';
 const SEARCH_PATH_TWO = 'schema_two,public';
@@ -18,7 +19,6 @@ let locationId;
 
 describe(Support.getTestDialectTeaser('Model'), () => {
   if (current.dialect.supports.searchPath) {
-
     describe('SEARCH PATH', () => {
       before(function() {
         this.Restaurant = current.define('restaurant', {
@@ -27,7 +27,8 @@ describe(Support.getTestDialectTeaser('Model'), () => {
         },
         {tableName: 'restaurants'});
         this.Location = current.define('location', {
-          name: DataTypes.STRING
+          name: DataTypes.STRING,
+          type: DataTypes.ENUM('a', 'b')
         },
         {tableName: 'locations'});
         this.Employee = current.define('employee', {
@@ -51,7 +52,6 @@ describe(Support.getTestDialectTeaser('Model'), () => {
         });
       });
 
-
       beforeEach('build restaurant tables', function() {
         const Restaurant = this.Restaurant;
         return current.createSchema('schema_one').then(() => {
@@ -68,6 +68,12 @@ describe(Support.getTestDialectTeaser('Model'), () => {
       afterEach('drop schemas', () => {
         return current.dropSchema('schema_one').then(() => {
           return current.dropSchema('schema_two');
+        });
+      });
+
+      describe('enum case', () => {
+        it('able to refresh enum when searchPath is used', function () {
+          return this.Location.sync({ force: true });
         });
       });
 
@@ -220,7 +226,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
             return restaurauntModel.save({searchPath: SEARCH_PATH_TWO});
           }).then(() => {
             return Restaurant.findAll({
-              where: {bar: {$like: 'one%'}},
+              where: {bar: {[Op.like]: 'one%'}},
               searchPath: SEARCH_PATH_ONE
             });
           }).then(restaurantsOne => {
@@ -234,7 +240,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
             expect(count).to.not.be.null;
             expect(count).to.equal(2);
             return Restaurant.findAll({
-              where: {bar: {$like: 'two%'}},
+              where: {bar: {[Op.like]: 'two%'}},
               searchPath: SEARCH_PATH_TWO
             });
           }).then(restaurantsTwo => {
@@ -291,7 +297,6 @@ describe(Support.getTestDialectTeaser('Model'), () => {
             expect(obj.location.name).to.equal('HQ');
           });
         });
-
 
         it('should be able to insert and retrieve associated data into the table in schema_two', function() {
           const Restaurant = this.Restaurant;
@@ -378,7 +383,6 @@ describe(Support.getTestDialectTeaser('Model'), () => {
             expect(restaurant.foo).to.equal('one');
           });
         });
-
 
         it('should be able to insert and retrieve associated data into the table in schema_two', function() {
           const Restaurant = this.Restaurant;

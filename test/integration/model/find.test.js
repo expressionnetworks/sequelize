@@ -5,7 +5,6 @@ const chai = require('chai'),
   Sequelize = require('../../../index'),
   Promise = Sequelize.Promise,
   expect = chai.expect,
-  moment = require('moment'),
   Support = require(__dirname + '/../support'),
   dialect = Support.getTestDialect(),
   DataTypes = require(__dirname + '/../../../lib/data-types'),
@@ -977,6 +976,24 @@ describe(Support.getTestDialectTeaser('Model'), () => {
           });
       });
 
+      it('override model options', () => {
+        const Model = current.define('Test', {
+          username: Sequelize.STRING(100)
+        }, {
+          rejectOnEmpty: true
+        });
+
+        return Model.sync({ force: true })
+          .then(() => {
+            return expect(Model.findOne({
+              rejectOnEmpty: false,
+              where: {
+                username: 'some-username-that-is-not-used-anywhere'
+              }
+            })).to.eventually.be.deep.equal(null);
+          });
+      });
+
       it('resolve null when disabled', () => {
         const Model = current.define('Test', {
           username: Sequelize.STRING(100)
@@ -991,31 +1008,6 @@ describe(Support.getTestDialectTeaser('Model'), () => {
             })).to.eventually.be.equal(null);
           });
       });
-
     });
-
-    it('should find records where deletedAt set to future', function() {
-      const User = this.sequelize.define('paranoiduser', {
-        username: Sequelize.STRING
-      }, { paranoid: true });
-
-      return User.sync({ force: true }).then(() => {
-        return User.bulkCreate([
-          {username: 'Bob'},
-          {username: 'Tobi', deletedAt: moment().add(30, 'minutes').format()},
-          {username: 'Max', deletedAt: moment().add(30, 'days').format()},
-          {username: 'Tony', deletedAt: moment().subtract(30, 'days').format()}
-        ]);
-      }).then(() => {
-        return User.find({ where: {username: 'Tobi'} });
-      }).then(tobi => {
-        expect(tobi).not.to.be.null;
-      }).then(() => {
-        return User.findAll();
-      }).then(users => {
-        expect(users.length).to.be.eql(3);
-      });
-    });
-
   });
 });

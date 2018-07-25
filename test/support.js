@@ -156,11 +156,18 @@ const Support = {
   },
 
   getAbstractQueryGenerator(sequelize) {
-    return Object.assign(
-      {},
-      AbstractQueryGenerator,
-      {options: sequelize.options, _dialect: sequelize.dialect, sequelize, quoteIdentifier(identifier) { return identifier; }}
-    );
+    class ModdedQueryGenerator extends AbstractQueryGenerator {
+      quoteIdentifier(x) {
+        return x;
+      }
+    }
+
+    const queryGenerator = new ModdedQueryGenerator({
+      sequelize,
+      _dialect: sequelize.dialect
+    });
+
+    return queryGenerator;
   },
 
   getTestDialect() {
@@ -206,14 +213,18 @@ const Support = {
     return url;
   },
 
-  expectsql(query, expectations) {
+  expectsql(query, assertions) {
+    const expectations = assertions.query || assertions;
     let expectation = expectations[Support.sequelize.dialect.name];
 
     if (!expectation) {
       if (expectations['default'] !== undefined) {
-        expectation = expectations['default']
-          .replace(/\[/g, Support.sequelize.dialect.TICK_CHAR_LEFT)
-          .replace(/\]/g, Support.sequelize.dialect.TICK_CHAR_RIGHT);
+        expectation = expectations['default'];
+        if (typeof expectation === 'string') {
+          expectation = expectation
+            .replace(/\[/g, Support.sequelize.dialect.TICK_CHAR_LEFT)
+            .replace(/\]/g, Support.sequelize.dialect.TICK_CHAR_RIGHT);
+        }
       } else {
         throw new Error('Undefined expectation for "' + Support.sequelize.dialect.name + '"!');
       }
@@ -222,7 +233,12 @@ const Support = {
     if (_.isError(query)) {
       expect(query.message).to.equal(expectation.message);
     } else {
-      expect(query).to.equal(expectation);
+      expect(query.query || query).to.equal(expectation);
+    }
+
+    if (assertions.bind) {
+      const bind = assertions.bind[Support.sequelize.dialect.name] || assertions.bind['default'] || assertions.bind;
+      expect(query.bind).to.deep.equal(bind);
     }
   }
 };

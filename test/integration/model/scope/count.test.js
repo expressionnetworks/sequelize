@@ -2,6 +2,7 @@
 
 const chai = require('chai'),
   Sequelize = require('../../../../index'),
+  Op = Sequelize.Op,
   expect = chai.expect,
   Promise = require(__dirname + '/../../../../lib/promise'),
   Support = require(__dirname + '/../../support');
@@ -22,7 +23,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
           defaultScope: {
             where: {
               access_level: {
-                gte: 5
+                [Op.gte]: 5
               }
             },
             attributes: ['id', 'username', 'email', 'access_level']
@@ -31,7 +32,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
             lowAccess: {
               where: {
                 access_level: {
-                  lte: 5
+                  [Op.lte]: 5
                 }
               }
             },
@@ -45,6 +46,26 @@ describe(Support.getTestDialectTeaser('Model'), () => {
                   priority: 1
                 }
               }]
+            },
+            withIncludeFunction: () => {
+              return {
+                include: [{
+                  model: this.Child,
+                  where: {
+                    priority: 1
+                  }
+                }]
+              };
+            },
+            withIncludeFunctionAndStringAssociation: () => {
+              return {
+                include: [{
+                  association: 'Children',
+                  where: {
+                    priority: 1
+                  }
+                }]
+              };
             }
           }
         });
@@ -78,7 +99,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
       });
 
       it('should be able to override default scope', function() {
-        return expect(this.ScopeMe.count({ where: { access_level: { gt: 5 }}})).to.eventually.equal(1);
+        return expect(this.ScopeMe.count({ where: { access_level: { [Op.gt]: 5 }}})).to.eventually.equal(1);
       });
 
       it('should be able to unscope', function() {
@@ -99,6 +120,14 @@ describe(Support.getTestDialectTeaser('Model'), () => {
 
       it('should be able to use where on include', function() {
         return expect(this.ScopeMe.scope('withInclude').count()).to.eventually.equal(1);
+      });
+
+      it('should be able to use include with function scope', function() {
+        return expect(this.ScopeMe.scope('withIncludeFunction').count()).to.eventually.equal(1);
+      });
+
+      it('should be able to use include with function scope and string association', function() {
+        return expect(this.ScopeMe.scope('withIncludeFunctionAndStringAssociation').count()).to.eventually.equal(1);
       });
     });
   });
