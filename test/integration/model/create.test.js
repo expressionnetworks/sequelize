@@ -8,6 +8,7 @@ const chai = require('chai'),
   Support = require(__dirname + '/../support'),
   DataTypes = require(__dirname + '/../../../lib/data-types'),
   dialect = Support.getTestDialect(),
+  Op = Sequelize.Op,
   _ = require('lodash'),
   assert = require('assert'),
   current = Support.sequelize;
@@ -104,6 +105,36 @@ describe(Support.getTestDialectTeaser('Model'), () => {
       });
     });
 
+    it('should error correctly when defaults contain a unique key and a non-existent field', function() {
+      const User = this.sequelize.define('user', {
+        objectId: {
+          type: DataTypes.STRING,
+          unique: true
+        },
+        username: {
+          type: DataTypes.STRING,
+          unique: true
+        }
+      });
+
+      return User.sync({force: true}).then(() => {
+        return User.create({
+          username: 'gottlieb'
+        });
+      }).then(() => {
+        return expect(User.findOrCreate({
+          where: {
+            objectId: 'asdasdasd'
+          },
+          defaults: {
+            username: 'gottlieb',
+            foo: 'bar', // field that's not a defined attribute
+            bar: 121
+          }
+        })).to.eventually.be.rejectedWith(Sequelize.UniqueConstraintError);
+      });
+    });
+
     it('should error correctly when defaults contain a unique key and the where clause is complex', function() {
       const User = this.sequelize.define('user', {
         objectId: {
@@ -120,7 +151,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
         .then(() => User.create({ username: 'gottlieb' }))
         .then(() => User.findOrCreate({
           where: {
-            $or: [{
+            [Op.or]: [{
               objectId: 'asdasdasd1'
             }, {
               objectId: 'asdasdasd2'
@@ -656,7 +687,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
           return User.findOne({
             where: {
               updatedAt: {
-                ne: null
+                [Op.ne]: null
               }
             }
           }).then(user => {
@@ -909,59 +940,49 @@ describe(Support.getTestDialectTeaser('Model'), () => {
       }
     });
 
-    it('casts empty arrays correctly for postgresql insert', function() {
-      if (dialect !== 'postgres') {
-        expect('').to.equal('');
-        return void 0;
-      }
-
-      const User = this.sequelize.define('UserWithArray', {
-        myvals: { type: Sequelize.ARRAY(Sequelize.INTEGER) },
-        mystr: { type: Sequelize.ARRAY(Sequelize.STRING) }
-      });
-
-      let test = false;
-      return User.sync({force: true}).then(() => {
-        return User.create({myvals: [], mystr: []}, {
-          logging(sql) {
-            test = true;
-            expect(sql.indexOf('ARRAY[]::INTEGER[]')).to.be.above(-1);
-            expect(sql.indexOf('ARRAY[]::VARCHAR(255)[]')).to.be.above(-1);
-          }
+    if (dialect === 'postgres') {
+      it('does not cast arrays for postgresql insert', function() {
+        const User = this.sequelize.define('UserWithArray', {
+          myvals: { type: Sequelize.ARRAY(Sequelize.INTEGER) },
+          mystr: { type: Sequelize.ARRAY(Sequelize.STRING) }
         });
-      }).then(() => {
-        expect(test).to.be.true;
-      });
-    });
 
-    it('casts empty array correct for postgres update', function() {
-      if (dialect !== 'postgres') {
-        expect('').to.equal('');
-        return void 0;
-      }
-
-      const User = this.sequelize.define('UserWithArray', {
-        myvals: { type: Sequelize.ARRAY(Sequelize.INTEGER) },
-        mystr: { type: Sequelize.ARRAY(Sequelize.STRING) }
-      });
-      let test = false;
-
-      return User.sync({force: true}).then(() => {
-        return User.create({myvals: [1, 2, 3, 4], mystr: ['One', 'Two', 'Three', 'Four']}).then(user => {
-          user.myvals = [];
-          user.mystr = [];
-          return user.save({
+        let test = false;
+        return User.sync({force: true}).then(() => {
+          return User.create({myvals: [], mystr: []}, {
             logging(sql) {
               test = true;
-              expect(sql.indexOf('ARRAY[]::INTEGER[]')).to.be.above(-1);
-              expect(sql.indexOf('ARRAY[]::VARCHAR(255)[]')).to.be.above(-1);
+              expect(sql).to.contain('INSERT INTO "UserWithArrays" ("id","myvals","mystr","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4)');
             }
           });
+        }).then(() => {
+          expect(test).to.be.true;
         });
-      }).then(() => {
-        expect(test).to.be.true;
       });
-    });
+
+      it('does not cast arrays for postgres update', function() {
+        const User = this.sequelize.define('UserWithArray', {
+          myvals: { type: Sequelize.ARRAY(Sequelize.INTEGER) },
+          mystr: { type: Sequelize.ARRAY(Sequelize.STRING) }
+        });
+        let test = false;
+
+        return User.sync({force: true}).then(() => {
+          return User.create({myvals: [1, 2, 3, 4], mystr: ['One', 'Two', 'Three', 'Four']}).then(user => {
+            user.myvals = [];
+            user.mystr = [];
+            return user.save({
+              logging(sql) {
+                test = true;
+                expect(sql).to.contain('UPDATE "UserWithArrays" SET "myvals"=$1,"mystr"=$2,"updatedAt"=$3 WHERE "id" = $4');
+              }
+            });
+          });
+        }).then(() => {
+          expect(test).to.be.true;
+        });
+      });
+    }
 
     it("doesn't allow duplicated records with unique:true", function() {
       const self = this,
@@ -1042,13 +1063,13 @@ describe(Support.getTestDialectTeaser('Model'), () => {
         self.sequelize.define('UserBadDataType', {
           activity_date: Sequelize.DATe
         });
-      }).to.throw(Error, 'Unrecognized data type for field activity_date');
+      }).to.throw(Error, 'Unrecognized datatype for attribute "UserBadDataType.activity_date"');
 
       expect(() => {
         self.sequelize.define('UserBadDataType', {
           activity_date: {type: Sequelize.DATe}
         });
-      }).to.throw(Error, 'Unrecognized data type for field activity_date');
+      }).to.throw(Error, 'Unrecognized datatype for attribute "UserBadDataType.activity_date"');
     });
 
     it('sets a 64 bit int in bigint', function() {
@@ -1108,7 +1129,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
             logging(sql) {
               expect(sql).to.exist;
               test = true;
-              expect(sql.toUpperCase().indexOf('INSERT')).to.be.above(-1);
+              expect(sql.toUpperCase()).to.contain('INSERT');
             }
           });
       }).then(() => {

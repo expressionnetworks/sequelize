@@ -5,8 +5,8 @@ const expect = chai.expect;
 const Support = require(__dirname + '/support');
 const DataTypes = require(__dirname + '/../../lib/data-types');
 const Utils = require(__dirname + '/../../lib/utils');
-const tedious = require('tedious');
-const tediousIsolationLevel = tedious.ISOLATION_LEVEL;
+const logger = require(__dirname + '/../../lib/utils/logger').getLogger();
+const Op = Support.sequelize.Op;
 
 suite(Support.getTestDialectTeaser('Utils'), () => {
   suite('merge', () => {
@@ -147,7 +147,7 @@ suite(Support.getTestDialectTeaser('Utils'), () => {
     test('$or where', () => {
       expect(Utils.mapOptionFieldNames({
         where: {
-          $or: {
+          [Op.or]: {
             firstName: 'Paul',
             lastName: 'Atreides'
           }
@@ -163,7 +163,7 @@ suite(Support.getTestDialectTeaser('Utils'), () => {
         }
       }))).to.eql({
         where: {
-          $or: {
+          [Op.or]: {
             first_name: 'Paul',
             last_name: 'Atreides'
           }
@@ -174,7 +174,7 @@ suite(Support.getTestDialectTeaser('Utils'), () => {
     test('$or[] where', () => {
       expect(Utils.mapOptionFieldNames({
         where: {
-          $or: [
+          [Op.or]: [
             {firstName: 'Paul'},
             {lastName: 'Atreides'}
           ]
@@ -190,7 +190,7 @@ suite(Support.getTestDialectTeaser('Utils'), () => {
         }
       }))).to.eql({
         where: {
-          $or: [
+          [Op.or]: [
             {first_name: 'Paul'},
             {last_name: 'Atreides'}
           ]
@@ -201,7 +201,7 @@ suite(Support.getTestDialectTeaser('Utils'), () => {
     test('$and where', () => {
       expect(Utils.mapOptionFieldNames({
         where: {
-          $and: {
+          [Op.and]: {
             firstName: 'Paul',
             lastName: 'Atreides'
           }
@@ -217,7 +217,7 @@ suite(Support.getTestDialectTeaser('Utils'), () => {
         }
       }))).to.eql({
         where: {
-          $and: {
+          [Op.and]: {
             first_name: 'Paul',
             last_name: 'Atreides'
           }
@@ -258,7 +258,7 @@ suite(Support.getTestDialectTeaser('Utils'), () => {
 
     test('accepts condition object (auto casting)', () => {
       expectsql(run(sql.fn('SUM', sql.cast({
-        $or: {
+        [Op.or]: {
           foo: 'foo',
           bar: 'bar'
         }
@@ -270,8 +270,6 @@ suite(Support.getTestDialectTeaser('Utils'), () => {
   });
 
   suite('Logger', () => {
-    const logger = Utils.getLogger();
-
     test('deprecate', () => {
       expect(logger.deprecate).to.be.a('function');
       logger.deprecate('test deprecation');
@@ -295,33 +293,4 @@ suite(Support.getTestDialectTeaser('Utils'), () => {
       expect(testLogger.namespace).to.be.eql('sequelize:test');
     });
   });
-
-  if (Support.getTestDialect() === 'mssql') {
-    suite('mapIsolationLevelStringToTedious', () => {
-      test('READ_UNCOMMITTED', () => {
-        expect(Utils.mapIsolationLevelStringToTedious('READ_UNCOMMITTED', tedious)).to.equal(tediousIsolationLevel.READ_UNCOMMITTED);
-      });
-
-      test('READ_COMMITTED', () => {
-        expect(Utils.mapIsolationLevelStringToTedious('READ_COMMITTED', tedious)).to.equal(tediousIsolationLevel.READ_COMMITTED);
-      });
-
-      test('REPEATABLE_READ', () => {
-        expect(Utils.mapIsolationLevelStringToTedious('REPEATABLE_READ', tedious)).to.equal(tediousIsolationLevel.REPEATABLE_READ);
-      });
-
-      test('SERIALIZABLE', () => {
-        expect(Utils.mapIsolationLevelStringToTedious('SERIALIZABLE', tedious)).to.equal(tediousIsolationLevel.SERIALIZABLE);
-      });
-
-      test('SNAPSHOT', () => {
-        expect(Utils.mapIsolationLevelStringToTedious('SNAPSHOT', tedious)).to.equal(tediousIsolationLevel.SNAPSHOT);
-      });
-
-      test('should throw error if tedious lib is not passed as a parameter', () => {
-        expect(Utils.mapIsolationLevelStringToTedious.bind(Utils, 'SNAPSHOT')).to.throw('An instance of tedious lib should be passed to this function');
-      });
-    });
-  }
-
 });

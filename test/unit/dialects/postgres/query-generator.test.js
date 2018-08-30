@@ -2,7 +2,7 @@
 
 const chai = require('chai'),
   expect = chai.expect,
-  Operators = require('../../../../lib/operators'),
+  Op = require('../../../../lib/operators'),
   QueryGenerator = require('../../../../lib/dialects/postgres/query-generator'),
   Support = require(__dirname + '/../../support'),
   dialect = Support.getTestDialect(),
@@ -84,6 +84,10 @@ if (dialect.match(/^postgres/)) {
           arguments: [{id: {type: 'INTEGER', unique: true}}],
           expectation: {id: 'INTEGER UNIQUE'}
         },
+        {
+          arguments: [{id: {type: 'INTEGER', unique: true, comment: 'This is my comment'}}],
+          expectation: {id: 'INTEGER UNIQUE COMMENT This is my comment'}
+        },
 
         // New references style
         {
@@ -137,8 +141,16 @@ if (dialect.match(/^postgres/)) {
 
       createTableQuery: [
         {
-          arguments: ['myTable', {int: 'INTEGER', bigint: 'BIGINT'}],
-          expectation: 'CREATE TABLE IF NOT EXISTS \"myTable\" (\"int\" INTEGER, \"bigint\" BIGINT);'
+          arguments: ['myTable', {int: 'INTEGER', bigint: 'BIGINT', smallint: 'SMALLINT' }],
+          expectation: 'CREATE TABLE IF NOT EXISTS \"myTable\" (\"int\" INTEGER, \"bigint\" BIGINT, \"smallint\" SMALLINT);'
+        },
+        {
+          arguments: ['myTable', {serial: 'INTEGER SERIAL', bigserial: 'BIGINT SERIAL', smallserial: 'SMALLINT SERIAL' }],
+          expectation: 'CREATE TABLE IF NOT EXISTS \"myTable\" (\"serial\"  SERIAL, \"bigserial\"  BIGSERIAL, \"smallserial\"  SMALLSERIAL);'
+        },
+        {
+          arguments: ['myTable', {int: 'INTEGER COMMENT Test', foo: 'INTEGER COMMENT Foo Comment'}],
+          expectation: 'CREATE TABLE IF NOT EXISTS \"myTable\" (\"int\" INTEGER , \"foo\" INTEGER ); COMMENT ON COLUMN \"myTable\".\"int\" IS \'Test\'; COMMENT ON COLUMN \"myTable\".\"foo\" IS \'Foo Comment\';'
         },
         {
           arguments: ['myTable', {title: 'VARCHAR(255)', name: 'VARCHAR(255)'}],
@@ -356,12 +368,12 @@ if (dialect.match(/^postgres/)) {
           context: QueryGenerator,
           needsSequelize: true
         }, {
-          title: 'Combination of sequelize.fn, sequelize.col and { in: ... }',
+          title: 'Combination of sequelize.fn, sequelize.col and { Op.in: ... }',
           arguments: ['myTable', function(sequelize) {
             return {
               where: sequelize.and(
                 { archived: null},
-                sequelize.where(sequelize.fn('COALESCE', sequelize.col('place_type_codename'), sequelize.col('announcement_type_codename')), { in: ['Lost', 'Found'] })
+                sequelize.where(sequelize.fn('COALESCE', sequelize.col('place_type_codename'), sequelize.col('announcement_type_codename')), { [Op.in]: ['Lost', 'Found'] })
               )
             };
           }],
@@ -403,7 +415,7 @@ if (dialect.match(/^postgres/)) {
             return {
               attributes: ['*', [sequelize.fn('YEAR', sequelize.col('createdAt')), 'creationYear']],
               group: ['creationYear', 'title'],
-              having: { creationYear: { gt: 2002 } }
+              having: { creationYear: { [Op.gt]: 2002 } }
             };
           }],
           expectation: 'SELECT *, YEAR(\"createdAt\") AS \"creationYear\" FROM \"myTable\" GROUP BY \"creationYear\", \"title\" HAVING \"creationYear\" > 2002;',
@@ -432,7 +444,7 @@ if (dialect.match(/^postgres/)) {
           context: QueryGenerator
         }, {
           title: 'string in array should escape \' as \'\'',
-          arguments: ['myTable', {where: { aliases: {$contains: ['Queen\'s']} }}],
+          arguments: ['myTable', {where: { aliases: {[Op.contains]: ['Queen\'s']} }}],
           expectation: "SELECT * FROM \"myTable\" WHERE \"myTable\".\"aliases\" @> ARRAY['Queen''s'];"
         },
 
@@ -503,43 +515,43 @@ if (dialect.match(/^postgres/)) {
           expectation: "SELECT * FROM mySchema.myTable WHERE mySchema.myTable.name = 'foo'';DROP TABLE mySchema.myTable;';",
           context: {options: {quoteIdentifiers: false}}
         }, {
-          title: 'use != if ne !== null',
-          arguments: ['myTable', {where: {field: {ne: 0}}}],
+          title: 'use != if Op.ne !== null',
+          arguments: ['myTable', {where: {field: {[Op.ne]: 0}}}],
           expectation: 'SELECT * FROM myTable WHERE myTable.field != 0;',
           context: {options: {quoteIdentifiers: false}}
         }, {
-          title: 'use IS NOT if ne === null',
-          arguments: ['myTable', {where: {field: {ne: null}}}],
+          title: 'use IS NOT if Op.ne === null',
+          arguments: ['myTable', {where: {field: {[Op.ne]: null}}}],
           expectation: 'SELECT * FROM myTable WHERE myTable.field IS NOT NULL;',
           context: {options: {quoteIdentifiers: false}}
         }, {
-          title: 'use IS NOT if not === BOOLEAN',
-          arguments: ['myTable', {where: {field: {not: true}}}],
+          title: 'use IS NOT if Op.not === BOOLEAN',
+          arguments: ['myTable', {where: {field: {[Op.not]: true}}}],
           expectation: 'SELECT * FROM myTable WHERE myTable.field IS NOT true;',
           context: {options: {quoteIdentifiers: false}}
         }, {
-          title: 'use != if not !== BOOLEAN',
-          arguments: ['myTable', {where: {field: {not: 3}}}],
+          title: 'use != if Op.not !== BOOLEAN',
+          arguments: ['myTable', {where: {field: {[Op.not]: 3}}}],
           expectation: 'SELECT * FROM myTable WHERE myTable.field != 3;',
           context: {options: {quoteIdentifiers: false}}
         }, {
           title: 'Regular Expression in where clause',
-          arguments: ['myTable', {where: {field: {$regexp: '^[h|a|t]'}}}],
+          arguments: ['myTable', {where: {field: {[Op.regexp]: '^[h|a|t]'}}}],
           expectation: "SELECT * FROM \"myTable\" WHERE \"myTable\".\"field\" ~ '^[h|a|t]';",
           context: QueryGenerator
         }, {
           title: 'Regular Expression negation in where clause',
-          arguments: ['myTable', {where: {field: {$notRegexp: '^[h|a|t]'}}}],
+          arguments: ['myTable', {where: {field: {[Op.notRegexp]: '^[h|a|t]'}}}],
           expectation: "SELECT * FROM \"myTable\" WHERE \"myTable\".\"field\" !~ '^[h|a|t]';",
           context: QueryGenerator
         }, {
           title: 'Case-insensitive Regular Expression in where clause',
-          arguments: ['myTable', {where: {field: {$iRegexp: '^[h|a|t]'}}}],
+          arguments: ['myTable', {where: {field: {[Op.iRegexp]: '^[h|a|t]'}}}],
           expectation: "SELECT * FROM \"myTable\" WHERE \"myTable\".\"field\" ~* '^[h|a|t]';",
           context: QueryGenerator
         }, {
           title: 'Case-insensitive Regular Expression negation in where clause',
-          arguments: ['myTable', {where: {field: {$notIRegexp: '^[h|a|t]'}}}],
+          arguments: ['myTable', {where: {field: {[Op.notIRegexp]: '^[h|a|t]'}}}],
           expectation: "SELECT * FROM \"myTable\" WHERE \"myTable\".\"field\" !~* '^[h|a|t]';",
           context: QueryGenerator
         }
@@ -548,111 +560,195 @@ if (dialect.match(/^postgres/)) {
       insertQuery: [
         {
           arguments: ['myTable', {}],
-          expectation: 'INSERT INTO \"myTable\" DEFAULT VALUES;'
+          expectation: {
+            query: 'INSERT INTO \"myTable\" DEFAULT VALUES;',
+            bind: []
+          }
         },
         {
           arguments: ['myTable', {name: 'foo'}],
-          expectation: "INSERT INTO \"myTable\" (\"name\") VALUES ('foo');"
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name") VALUES ($1);',
+            bind: ['foo']
+          }
         }, {
           arguments: ['myTable', {name: 'foo'}, {}, { returning: true }],
-          expectation: "INSERT INTO \"myTable\" (\"name\") VALUES ('foo') RETURNING *;"
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name") VALUES ($1) RETURNING *;',
+            bind: ['foo']
+          }
         }, {
           arguments: ['myTable', {name: "foo';DROP TABLE myTable;"}],
-          expectation: "INSERT INTO \"myTable\" (\"name\") VALUES ('foo'';DROP TABLE myTable;');"
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name") VALUES ($1);',
+            bind: ["foo';DROP TABLE myTable;"]
+          }
         }, {
           arguments: ['myTable', {name: 'foo', birthday: moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()}],
-          expectation: "INSERT INTO \"myTable\" (\"name\",\"birthday\") VALUES ('foo','2011-03-27 10:01:55.000 +00:00');"
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name","birthday") VALUES ($1,$2);',
+            bind: ['foo', moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()]
+          }
         }, {
           arguments: ['myTable', {data: new Buffer('Sequelize') }],
-          expectation: "INSERT INTO \"myTable\" (\"data\") VALUES (E'\\\\x53657175656c697a65');"
+          expectation: {
+            query: 'INSERT INTO "myTable" ("data") VALUES ($1);',
+            bind: [new Buffer('Sequelize')]
+          }
         }, {
           arguments: ['myTable', {name: 'foo', numbers: [1, 2, 3]}],
-          expectation: "INSERT INTO \"myTable\" (\"name\",\"numbers\") VALUES ('foo',ARRAY[1,2,3]);"
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name","numbers") VALUES ($1,$2);',
+            bind: ['foo', [1, 2, 3]]
+          }
         }, {
           arguments: ['myTable', {name: 'foo', foo: 1}],
-          expectation: "INSERT INTO \"myTable\" (\"name\",\"foo\") VALUES ('foo',1);"
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name","foo") VALUES ($1,$2);',
+            bind: ['foo', 1]
+          }
         }, {
           arguments: ['myTable', {name: 'foo', nullValue: null}],
-          expectation: "INSERT INTO \"myTable\" (\"name\",\"nullValue\") VALUES ('foo',NULL);"
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name","nullValue") VALUES ($1,$2);',
+            bind: ['foo', null]
+          }
         }, {
           arguments: ['myTable', {name: 'foo', nullValue: null}],
-          expectation: "INSERT INTO \"myTable\" (\"name\",\"nullValue\") VALUES ('foo',NULL);",
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name","nullValue") VALUES ($1,$2);',
+            bind: ['foo', null]
+          },
           context: {options: {omitNull: false}}
         }, {
           arguments: ['myTable', {name: 'foo', nullValue: null}],
-          expectation: "INSERT INTO \"myTable\" (\"name\") VALUES ('foo');",
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name") VALUES ($1);',
+            bind: ['foo']
+          },
           context: {options: {omitNull: true}}
         }, {
           arguments: ['myTable', {name: 'foo', nullValue: undefined}],
-          expectation: "INSERT INTO \"myTable\" (\"name\") VALUES ('foo');",
+          expectation: {
+            query: 'INSERT INTO "myTable" ("name") VALUES ($1);',
+            bind: ['foo']
+          },
           context: {options: {omitNull: true}}
         }, {
           arguments: [{tableName: 'myTable', schema: 'mySchema'}, {name: 'foo'}],
-          expectation: "INSERT INTO \"mySchema\".\"myTable\" (\"name\") VALUES ('foo');"
+          expectation: {
+            query: 'INSERT INTO "mySchema"."myTable" ("name") VALUES ($1);',
+            bind: ['foo']
+          }
         }, {
           arguments: [{tableName: 'myTable', schema: 'mySchema'}, {name: JSON.stringify({info: 'Look ma a " quote'})}],
-          expectation: "INSERT INTO \"mySchema\".\"myTable\" (\"name\") VALUES ('{\"info\":\"Look ma a \\\" quote\"}');"
+          expectation: {
+            query: 'INSERT INTO "mySchema"."myTable" ("name") VALUES ($1);',
+            bind: ['{"info":"Look ma a \\" quote"}']
+          }
         }, {
           arguments: [{tableName: 'myTable', schema: 'mySchema'}, {name: "foo';DROP TABLE mySchema.myTable;"}],
-          expectation: "INSERT INTO \"mySchema\".\"myTable\" (\"name\") VALUES ('foo'';DROP TABLE mySchema.myTable;');"
+          expectation: {
+            query: 'INSERT INTO "mySchema"."myTable" ("name") VALUES ($1);',
+            bind: ["foo';DROP TABLE mySchema.myTable;"]
+          }
         }, {
           arguments: ['myTable', function(sequelize) {
             return {
               foo: sequelize.fn('NOW')
             };
           }],
-          expectation: 'INSERT INTO \"myTable\" (\"foo\") VALUES (NOW());',
+          expectation: {
+            query: 'INSERT INTO \"myTable\" (\"foo\") VALUES (NOW());',
+            bind: []
+          },
           needsSequelize: true
         },
 
         // Variants when quoteIdentifiers is false
         {
           arguments: ['myTable', {name: 'foo'}],
-          expectation: "INSERT INTO myTable (name) VALUES ('foo');",
+          expectation: {
+            query: 'INSERT INTO myTable (name) VALUES ($1);',
+            bind: ['foo']
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: "foo';DROP TABLE myTable;"}],
-          expectation: "INSERT INTO myTable (name) VALUES ('foo'';DROP TABLE myTable;');",
+          expectation: {
+            query: 'INSERT INTO myTable (name) VALUES ($1);',
+            bind: ["foo';DROP TABLE myTable;"]
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: 'foo', birthday: moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()}],
-          expectation: "INSERT INTO myTable (name,birthday) VALUES ('foo','2011-03-27 10:01:55.000 +00:00');",
+          expectation: {
+            query: 'INSERT INTO myTable (name,birthday) VALUES ($1,$2);',
+            bind: ['foo', moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()]
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: 'foo', numbers: [1, 2, 3]}],
-          expectation: "INSERT INTO myTable (name,numbers) VALUES ('foo',ARRAY[1,2,3]);",
+          expectation: {
+            query: 'INSERT INTO myTable (name,numbers) VALUES ($1,$2);',
+            bind: ['foo', [1, 2, 3]]
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: 'foo', foo: 1}],
-          expectation: "INSERT INTO myTable (name,foo) VALUES ('foo',1);",
+          expectation: {
+            query: 'INSERT INTO myTable (name,foo) VALUES ($1,$2);',
+            bind: ['foo', 1]
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: 'foo', nullValue: null}],
-          expectation: "INSERT INTO myTable (name,nullValue) VALUES ('foo',NULL);",
+          expectation: {
+            query: 'INSERT INTO myTable (name,nullValue) VALUES ($1,$2);',
+            bind: ['foo', null]
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: 'foo', nullValue: null}],
-          expectation: "INSERT INTO myTable (name,nullValue) VALUES ('foo',NULL);",
+          expectation: {
+            query: 'INSERT INTO myTable (name,nullValue) VALUES ($1,$2);',
+            bind: ['foo', null]
+          },
           context: {options: {omitNull: false, quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: 'foo', nullValue: null}],
-          expectation: "INSERT INTO myTable (name) VALUES ('foo');",
+          expectation: {
+            query: 'INSERT INTO myTable (name) VALUES ($1);',
+            bind: ['foo']
+          },
           context: {options: {omitNull: true, quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: 'foo', nullValue: undefined}],
-          expectation: "INSERT INTO myTable (name) VALUES ('foo');",
+          expectation: {
+            query: 'INSERT INTO myTable (name) VALUES ($1);',
+            bind: ['foo']
+          },
           context: {options: {omitNull: true, quoteIdentifiers: false}}
         }, {
           arguments: [{tableName: 'myTable', schema: 'mySchema'}, {name: 'foo'}],
-          expectation: "INSERT INTO mySchema.myTable (name) VALUES ('foo');",
+          expectation: {
+            query: 'INSERT INTO mySchema.myTable (name) VALUES ($1);',
+            bind: ['foo']
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: [{tableName: 'myTable', schema: 'mySchema'}, {name: JSON.stringify({info: 'Look ma a " quote'})}],
-          expectation: "INSERT INTO mySchema.myTable (name) VALUES ('{\"info\":\"Look ma a \\\" quote\"}');",
+          expectation: {
+            query: 'INSERT INTO mySchema.myTable (name) VALUES ($1);',
+            bind: ['{"info":"Look ma a \\" quote"}']
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: [{tableName: 'myTable', schema: 'mySchema'}, {name: "foo';DROP TABLE mySchema.myTable;"}],
-          expectation: "INSERT INTO mySchema.myTable (name) VALUES ('foo'';DROP TABLE mySchema.myTable;');",
+          expectation: {
+            query: 'INSERT INTO mySchema.myTable (name) VALUES ($1);',
+            bind: ["foo';DROP TABLE mySchema.myTable;"]
+          },
           context: {options: {quoteIdentifiers: false}}
         }
       ],
@@ -750,50 +846,89 @@ if (dialect.match(/^postgres/)) {
       updateQuery: [
         {
           arguments: ['myTable', {name: 'foo', birthday: moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()}, {id: 2}],
-          expectation: "UPDATE \"myTable\" SET \"name\"='foo',\"birthday\"='2011-03-27 10:01:55.000 +00:00' WHERE \"id\" = 2"
+          expectation: {
+            query: 'UPDATE "myTable" SET "name"=$1,"birthday"=$2 WHERE "id" = $3',
+            bind: ['foo', moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate(), 2]
+          }
         }, {
           arguments: ['myTable', {name: 'foo', birthday: moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()}, {id: 2}],
-          expectation: "UPDATE \"myTable\" SET \"name\"='foo',\"birthday\"='2011-03-27 10:01:55.000 +00:00' WHERE \"id\" = 2"
+          expectation: {
+            query: 'UPDATE "myTable" SET "name"=$1,"birthday"=$2 WHERE "id" = $3',
+            bind: ['foo', moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate(), 2]
+          }
         }, {
           arguments: ['myTable', {bar: 2}, {name: 'foo'}],
-          expectation: "UPDATE \"myTable\" SET \"bar\"=2 WHERE \"name\" = 'foo'"
+          expectation: {
+            query: 'UPDATE "myTable" SET "bar"=$1 WHERE "name" = $2',
+            bind: [2, 'foo']
+          }
         }, {
           arguments: ['myTable', {bar: 2}, {name: 'foo'}, { returning: true }],
-          expectation: "UPDATE \"myTable\" SET \"bar\"=2 WHERE \"name\" = 'foo' RETURNING *"
+          expectation: {
+            query: 'UPDATE "myTable" SET "bar"=$1 WHERE "name" = $2 RETURNING *',
+            bind: [2, 'foo']
+          }
         }, {
           arguments: ['myTable', {numbers: [1, 2, 3]}, {name: 'foo'}],
-          expectation: "UPDATE \"myTable\" SET \"numbers\"=ARRAY[1,2,3] WHERE \"name\" = 'foo'"
+          expectation: {
+            query: 'UPDATE "myTable" SET "numbers"=$1 WHERE "name" = $2',
+            bind: [[1, 2, 3], 'foo']
+          }
         }, {
           arguments: ['myTable', {name: "foo';DROP TABLE myTable;"}, {name: 'foo'}],
-          expectation: "UPDATE \"myTable\" SET \"name\"='foo'';DROP TABLE myTable;' WHERE \"name\" = 'foo'"
+          expectation: {
+            query: 'UPDATE "myTable" SET "name"=$1 WHERE "name" = $2',
+            bind: ["foo';DROP TABLE myTable;", 'foo']
+          }
         }, {
           arguments: ['myTable', {bar: 2, nullValue: null}, {name: 'foo'}],
-          expectation: "UPDATE \"myTable\" SET \"bar\"=2,\"nullValue\"=NULL WHERE \"name\" = 'foo'"
+          expectation: {
+            query: 'UPDATE "myTable" SET "bar"=$1,"nullValue"=$2 WHERE "name" = $3',
+            bind: [2, null, 'foo']
+          }
         }, {
           arguments: ['myTable', {bar: 2, nullValue: null}, {name: 'foo'}],
-          expectation: "UPDATE \"myTable\" SET \"bar\"=2,\"nullValue\"=NULL WHERE \"name\" = 'foo'",
+          expectation: {
+            query: 'UPDATE "myTable" SET "bar"=$1,"nullValue"=$2 WHERE "name" = $3',
+            bind: [2, null, 'foo']
+          },
           context: {options: {omitNull: false}}
         }, {
           arguments: ['myTable', {bar: 2, nullValue: null}, {name: 'foo'}],
-          expectation: "UPDATE \"myTable\" SET \"bar\"=2 WHERE \"name\" = 'foo'",
+          expectation: {
+            query: 'UPDATE "myTable" SET "bar"=$1 WHERE "name" = $2',
+            bind: [2, 'foo']
+          },
           context: {options: {omitNull: true}}
         }, {
           arguments: ['myTable', {bar: 2, nullValue: undefined}, {name: 'foo'}],
-          expectation: "UPDATE \"myTable\" SET \"bar\"=2 WHERE \"name\" = 'foo'",
+          expectation: {
+            query: 'UPDATE "myTable" SET "bar"=$1 WHERE "name" = $2',
+            bind: [2, 'foo']
+          },
           context: {options: {omitNull: true}}
         }, {
           arguments: [{tableName: 'myTable', schema: 'mySchema'}, {name: 'foo', birthday: moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()}, {id: 2}],
-          expectation: "UPDATE \"mySchema\".\"myTable\" SET \"name\"='foo',\"birthday\"='2011-03-27 10:01:55.000 +00:00' WHERE \"id\" = 2"
+          expectation: {
+            query: 'UPDATE "mySchema"."myTable" SET "name"=$1,"birthday"=$2 WHERE "id" = $3',
+            bind: ['foo', moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate(), 2]
+          }
         }, {
           arguments: [{tableName: 'myTable', schema: 'mySchema'}, {name: "foo';DROP TABLE mySchema.myTable;"}, {name: 'foo'}],
-          expectation: "UPDATE \"mySchema\".\"myTable\" SET \"name\"='foo'';DROP TABLE mySchema.myTable;' WHERE \"name\" = 'foo'"
+          expectation: {
+            query: 'UPDATE "mySchema"."myTable" SET "name"=$1 WHERE "name" = $2',
+            bind: ["foo';DROP TABLE mySchema.myTable;", 'foo']
+          }
         }, {
           arguments: ['myTable', function(sequelize) {
             return {
               bar: sequelize.fn('NOW')
             };
           }, {name: 'foo'}],
-          expectation: "UPDATE \"myTable\" SET \"bar\"=NOW() WHERE \"name\" = 'foo'",
+          expectation: {
+            query: 'UPDATE "myTable" SET "bar"=NOW() WHERE "name" = $1',
+            bind: ['foo']
+          },
           needsSequelize: true
         }, {
           arguments: ['myTable', function(sequelize) {
@@ -801,54 +936,90 @@ if (dialect.match(/^postgres/)) {
               bar: sequelize.col('foo')
             };
           }, {name: 'foo'}],
-          expectation: "UPDATE \"myTable\" SET \"bar\"=\"foo\" WHERE \"name\" = 'foo'",
+          expectation: {
+            query: 'UPDATE "myTable" SET "bar"="foo" WHERE "name" = $1',
+            bind: ['foo']
+          },
           needsSequelize: true
         },
 
         // Variants when quoteIdentifiers is false
         {
           arguments: ['myTable', {name: 'foo', birthday: moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()}, {id: 2}],
-          expectation: "UPDATE myTable SET name='foo',birthday='2011-03-27 10:01:55.000 +00:00' WHERE id = 2",
+          expectation: {
+            query: 'UPDATE myTable SET name=$1,birthday=$2 WHERE id = $3',
+            bind: ['foo', moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate(), 2]
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: 'foo', birthday: moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()}, {id: 2}],
-          expectation: "UPDATE myTable SET name='foo',birthday='2011-03-27 10:01:55.000 +00:00' WHERE id = 2",
+          expectation: {
+            query: 'UPDATE myTable SET name=$1,birthday=$2 WHERE id = $3',
+            bind: ['foo', moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate(), 2]
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {bar: 2}, {name: 'foo'}],
-          expectation: "UPDATE myTable SET bar=2 WHERE name = 'foo'",
+          expectation: {
+            query: 'UPDATE myTable SET bar=$1 WHERE name = $2',
+            bind: [2, 'foo']
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {numbers: [1, 2, 3]}, {name: 'foo'}],
-          expectation: "UPDATE myTable SET numbers=ARRAY[1,2,3] WHERE name = 'foo'",
+          expectation: {
+            query: 'UPDATE myTable SET numbers=$1 WHERE name = $2',
+            bind: [[1, 2, 3], 'foo']
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {name: "foo';DROP TABLE myTable;"}, {name: 'foo'}],
-          expectation: "UPDATE myTable SET name='foo'';DROP TABLE myTable;' WHERE name = 'foo'",
+          expectation: {
+            query: 'UPDATE myTable SET name=$1 WHERE name = $2',
+            bind: ["foo';DROP TABLE myTable;", 'foo']
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {bar: 2, nullValue: null}, {name: 'foo'}],
-          expectation: "UPDATE myTable SET bar=2,nullValue=NULL WHERE name = 'foo'",
+          expectation: {
+            query: 'UPDATE myTable SET bar=$1,nullValue=$2 WHERE name = $3',
+            bind: [2, null, 'foo']
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {bar: 2, nullValue: null}, {name: 'foo'}],
-          expectation: "UPDATE myTable SET bar=2,nullValue=NULL WHERE name = 'foo'",
+          expectation: {
+            query: 'UPDATE myTable SET bar=$1,nullValue=$2 WHERE name = $3',
+            bind: [2, null, 'foo']
+          },
           context: {options: {omitNull: false, quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {bar: 2, nullValue: null}, {name: 'foo'}],
-          expectation: "UPDATE myTable SET bar=2 WHERE name = 'foo'",
+          expectation: {
+            query: 'UPDATE myTable SET bar=$1 WHERE name = $2',
+            bind: [2, 'foo']
+          },
           context: {options: {omitNull: true, quoteIdentifiers: false}}
         }, {
           arguments: ['myTable', {bar: 2, nullValue: undefined}, {name: 'foo'}],
-          expectation: "UPDATE myTable SET bar=2 WHERE name = 'foo'",
+          expectation: {
+            query: 'UPDATE myTable SET bar=$1 WHERE name = $2',
+            bind: [2, 'foo']
+          },
           context: {options: {omitNull: true, quoteIdentifiers: false}}
         }, {
           arguments: [{schema: 'mySchema', tableName: 'myTable'}, {name: 'foo', birthday: moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate()}, {id: 2}],
-          expectation: "UPDATE mySchema.myTable SET name='foo',birthday='2011-03-27 10:01:55.000 +00:00' WHERE id = 2",
+          expectation: {
+            query: 'UPDATE mySchema.myTable SET name=$1,birthday=$2 WHERE id = $3',
+            bind: ['foo', moment('2011-03-27 10:01:55 +0000', 'YYYY-MM-DD HH:mm:ss Z').toDate(), 2]
+          },
           context: {options: {quoteIdentifiers: false}}
         }, {
           arguments: [{schema: 'mySchema', tableName: 'myTable'}, {name: "foo';DROP TABLE mySchema.myTable;"}, {name: 'foo'}],
-          expectation: "UPDATE mySchema.myTable SET name='foo'';DROP TABLE mySchema.myTable;' WHERE name = 'foo'",
+          expectation: {
+            query: 'UPDATE mySchema.myTable SET name=$1 WHERE name = $2',
+            bind: ["foo';DROP TABLE mySchema.myTable;", 'foo']
+          },
           context: {options: {quoteIdentifiers: false}}
         }
       ],
@@ -984,27 +1155,26 @@ if (dialect.match(/^postgres/)) {
 
     _.each(suites, (tests, suiteTitle) => {
       describe(suiteTitle, () => {
-        afterEach(function() {
-          this.sequelize.options.quoteIdentifiers = true;
-          QueryGenerator.options.quoteIdentifiers = true;
+        beforeEach(function() {
+          this.queryGenerator = new QueryGenerator({
+            sequelize: this.sequelize,
+            _dialect: this.sequelize.dialect
+          });
         });
 
         tests.forEach(test => {
-          const title = test.title || 'Postgres correctly returns ' + test.expectation + ' for ' + JSON.stringify(test.arguments);
+          const query = test.expectation.query || test.expectation;
+          const title = test.title || 'Postgres correctly returns ' + query + ' for ' + JSON.stringify(test.arguments);
           it(title, function() {
-            // Options would normally be set by the query interface that instantiates the query-generator, but here we specify it explicitly
-            const context = test.context || {options: {}};
-
             if (test.needsSequelize) {
               if (_.isFunction(test.arguments[1])) test.arguments[1] = test.arguments[1](this.sequelize);
               if (_.isFunction(test.arguments[2])) test.arguments[2] = test.arguments[2](this.sequelize);
             }
 
-            QueryGenerator.options = _.assign(context.options, { timezone: '+00:00' });
-            QueryGenerator._dialect = this.sequelize.dialect;
-            QueryGenerator.sequelize = this.sequelize;
-            QueryGenerator.setOperatorsAliases(Operators.LegacyAliases);
-            const conditions = QueryGenerator[suiteTitle].apply(QueryGenerator, test.arguments);
+            // Options would normally be set by the query interface that instantiates the query-generator, but here we specify it explicitly
+            this.queryGenerator.options = Object.assign({}, this.queryGenerator.options, test.context && test.context.options || {});
+
+            const conditions = this.queryGenerator[suiteTitle].apply(this.queryGenerator, test.arguments);
             expect(conditions).to.deep.equal(test.expectation);
           });
         });

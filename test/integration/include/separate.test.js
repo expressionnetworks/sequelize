@@ -7,6 +7,7 @@ const chai = require('chai'),
   Sequelize = require(__dirname + '/../../../index'),
   DataTypes = require(__dirname + '/../../../lib/data-types'),
   current = Support.sequelize,
+  dialect = Support.getTestDialect(),
   Promise = Sequelize.Promise,
   _ = require('lodash');
 
@@ -100,6 +101,65 @@ if (current.dialect.supports.groupedLimit) {
             expect(sqlSpy).to.have.been.calledTwice;
           });
         });
+      });
+
+      it('should work even if include does not specify foreign key attribute with custom sourceKey', function() {
+        const User = this.sequelize.define('User', {
+          name: DataTypes.STRING,
+          userExtraId: {
+            type: DataTypes.INTEGER,
+            unique: true
+          }
+        });
+        const Task = this.sequelize.define('Task', {
+          title: DataTypes.STRING
+        });
+        const sqlSpy = sinon.spy();
+
+        User.Tasks = User.hasMany(Task, {
+          as: 'tasks',
+          foreignKey: 'userId',
+          sourceKey: 'userExtraId'
+        });
+
+        return this.sequelize
+          .sync({force: true})
+          .then(() => {
+            return User.create({
+              id: 1,
+              userExtraId: 222,
+              tasks: [
+                {},
+                {},
+                {}
+              ]
+            }, {
+              include: [User.Tasks]
+            });
+          })
+          .then(() => {
+            return User.findAll({
+              attributes: ['name'],
+              include: [
+                {
+                  attributes: [
+                    'title'
+                  ],
+                  association: User.Tasks,
+                  separate: true
+                }
+              ],
+              order: [
+                ['id', 'ASC']
+              ],
+              logging: sqlSpy
+            });
+          })
+          .then(users => {
+            expect(users[0].get('tasks')).to.be.ok;
+            expect(users[0].get('tasks').length).to.equal(3);
+            expect(sqlSpy).to.have.been.calledTwice;
+          });
       });
 
       it('should not break a nested include with null values', function() {
@@ -423,6 +483,13 @@ if (current.dialect.supports.groupedLimit) {
                 expect(result[1].tasks.length).to.equal(2);
                 expect(result[1].tasks[0].title).to.equal('a');
                 expect(result[1].tasks[1].title).to.equal('c');
+                return this.sequelize.dropSchema('archive').then(() => {
+                  return this.sequelize.showAllSchemas().then(schemas => {
+                    if (dialect === 'postgres' || dialect === 'mssql') {
+                      expect(schemas).to.be.empty;
+                    }
+                  });
+                });
               });
             });
           });

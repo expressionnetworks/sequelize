@@ -79,7 +79,7 @@ describe(Support.getTestDialectTeaser('InstanceValidator'), () => {
 
     it('should enforce a unique constraint', function() {
       const Model = this.sequelize.define('model', {
-        uniqueName: { type: Sequelize.STRING, unique: true }
+        uniqueName: { type: Sequelize.STRING, unique: 'uniqueName' }
       });
       const records = [
         { uniqueName: 'unique name one' },
@@ -544,6 +544,24 @@ describe(Support.getTestDialectTeaser('InstanceValidator'), () => {
     const failingBar = Bar.build({ field: 'value3' });
 
     return expect(failingBar.validate({ skip: ['field'] })).not.to.be.rejected;
+  });
+
+  it('skips validations for fields with value that is SequelizeMethod', function() {
+    const values = ['value1', 'value2'];
+
+    const Bar = this.sequelize.define('Bar' + config.rand(), {
+      field: {
+        type: Sequelize.ENUM,
+        values,
+        validate: {
+          isIn: [values]
+        }
+      }
+    });
+
+    const failingBar = Bar.build({ field: this.sequelize.literal('5 + 1') });
+
+    return expect(failingBar.validate()).not.to.be.rejected;
   });
 
   it('raises an error if saving a different value into an immutable field', function() {

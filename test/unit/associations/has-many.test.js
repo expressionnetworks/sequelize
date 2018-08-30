@@ -13,6 +13,14 @@ const chai = require('chai'),
   Promise   = current.Promise;
 
 describe(Support.getTestDialectTeaser('hasMany'), () => {
+  it('throws when invalid model is passed', () => {
+    const User = current.define('User');
+
+    expect(() => {
+      User.hasMany();
+    }).to.throw('User.hasMany called with something that\'s not a subclass of Sequelize.Model');
+  });
+
   describe('optimizations using bulk create, destroy and update', () => {
     const User =current.define('User', { username: DataTypes.STRING }),
       Task = current.define('Task', { title: DataTypes.STRING });
@@ -55,7 +63,7 @@ describe(Support.getTestDialectTeaser('hasMany'), () => {
         ]));
 
       return user.setTasks([task1, task2]).bind(this).then(function() {
-        this.update.reset();
+        this.update.resetHistory();
         return user.setTasks(null);
       }).then(function() {
         expect(this.findAll).to.have.been.calledTwice;
@@ -187,6 +195,64 @@ describe(Support.getTestDialectTeaser('hasMany'), () => {
         expect(result[idC].length).to.equal(0);
       }).finally(() => {
         findAll.restore();
+      });
+    });
+  });
+  describe('association hooks', () => {
+    beforeEach(function() {
+      this.Projects = this.sequelize.define('Project', { title: DataTypes.STRING });
+      this.Tasks = this.sequelize.define('Task', { title: DataTypes.STRING });
+    });
+    describe('beforeHasManyAssociate', () => {
+      it('should trigger', function() {
+        const beforeAssociate = sinon.spy();
+        this.Projects.beforeAssociate(beforeAssociate);
+        this.Projects.hasMany(this.Tasks, {hooks: true});
+
+        const beforeAssociateArgs = beforeAssociate.getCall(0).args;
+
+        expect(beforeAssociate).to.have.been.called;
+        expect(beforeAssociateArgs.length).to.equal(2);
+
+        const firstArg = beforeAssociateArgs[0];
+        expect(Object.keys(firstArg).join()).to.equal('source,target,type');
+        expect(firstArg.source).to.equal(this.Projects);
+        expect(firstArg.target).to.equal(this.Tasks);
+        expect(firstArg.type.name).to.equal('HasMany');
+        expect(beforeAssociateArgs[1].sequelize.constructor.name).to.equal('Sequelize');
+      });
+      it('should not trigger association hooks', function() {
+        const beforeAssociate = sinon.spy();
+        this.Projects.beforeAssociate(beforeAssociate);
+        this.Projects.hasMany(this.Tasks, {hooks: false});
+        expect(beforeAssociate).to.not.have.been.called;
+      });
+    });
+    describe('afterHasManyAssociate', () => {
+      it('should trigger', function() {
+        const afterAssociate = sinon.spy();
+        this.Projects.afterAssociate(afterAssociate);
+        this.Projects.hasMany(this.Tasks, {hooks: true});
+
+        const afterAssociateArgs = afterAssociate.getCall(0).args;
+
+        expect(afterAssociate).to.have.been.called;
+
+        const firstArg = afterAssociateArgs[0];
+
+        expect(Object.keys(firstArg).join()).to.equal('source,target,type,association');
+        expect(firstArg.source).to.equal(this.Projects);
+        expect(firstArg.target).to.equal(this.Tasks);
+        expect(firstArg.type.name).to.equal('HasMany');
+        expect(firstArg.association.constructor.name).to.equal('HasMany');
+
+        expect(afterAssociateArgs[1].sequelize.constructor.name).to.equal('Sequelize');
+      });
+      it('should not trigger association hooks', function() {
+        const afterAssociate = sinon.spy();
+        this.Projects.afterAssociate(afterAssociate);
+        this.Projects.hasMany(this.Tasks, {hooks: false});
+        expect(afterAssociate).to.not.have.been.called;
       });
     });
   });

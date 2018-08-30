@@ -3,6 +3,7 @@
 const chai = require('chai'),
   expect = chai.expect,
   Support = require('./support'),
+  dialect = Support.getTestDialect(),
   Sequelize = Support.Sequelize,
   current = Support.sequelize,
   DataTypes = Sequelize.DataTypes;
@@ -16,6 +17,9 @@ describe('model', () => {
           emergency_contact: DataTypes.JSON,
           emergencyContact: DataTypes.JSON
         });
+        this.Order = this.sequelize.define('Order');
+        this.Order.belongsTo(this.User);
+
         return this.sequelize.sync({ force: true });
       });
 
@@ -26,19 +30,17 @@ describe('model', () => {
           });
       });
 
-      it('should stringify json with insert', function() {
+      it('should use a placeholder for json with insert', function() {
         return this.User.create({
           username: 'bob',
           emergency_contact: { name: 'joe', phones: [1337, 42] }
         }, {
           fields: ['id', 'username', 'document', 'emergency_contact'],
           logging: sql => {
-            const expected = '\'{"name":"joe","phones":[1337,42]}\'';
-            const expectedEscaped = '\'{\\"name\\":\\"joe\\",\\"phones\\":[1337,42]}\'';
-            if (sql.indexOf(expected) === -1) {
-              expect(sql.indexOf(expectedEscaped)).not.to.equal(-1);
+            if (dialect.match(/^mysql/)) {
+              expect(sql).to.include('?');
             } else {
-              expect(sql.indexOf(expected)).not.to.equal(-1);
+              expect(sql).to.include('$1');
             }
           }
         });
@@ -256,6 +258,65 @@ describe('model', () => {
           });
         });
       }
+
+      it('should be able retrieve json value with nested include', function() {
+        return this.User.create({
+          emergency_contact: {
+            name: 'kate'
+          }
+        }).then(user => {
+          return this.Order.create({ UserId: user.id });
+        }).then(() => {
+          return this.Order.findAll({
+            attributes: ['id'],
+            include: [{
+              model: this.User,
+              attributes: [
+                [this.sequelize.json('emergency_contact.name'), 'katesName']
+              ]
+            }]
+          });
+        }).then(orders => {
+          expect(orders[0].User.getDataValue('katesName')).to.equal('kate');
+        });
+      });
+    });
+  }
+
+  if (current.dialect.supports.JSONB) {
+    describe('jsonb', () => {
+      beforeEach(function() {
+        this.User = this.sequelize.define('User', {
+          username: DataTypes.STRING,
+          emergency_contact: DataTypes.JSONB,
+        });
+        this.Order = this.sequelize.define('Order');
+        this.Order.belongsTo(this.User);
+
+        return this.sequelize.sync({ force: true });
+      });
+      
+      it('should be able retrieve json value with nested include', function() {
+        return this.User.create({
+          emergency_contact: {
+            name: 'kate'
+          }
+        }).then(user => {
+          return this.Order.create({ UserId: user.id });
+        }).then(() => {
+          return this.Order.findAll({
+            attributes: ['id'],
+            include: [{
+              model: this.User,
+              attributes: [
+                [this.sequelize.json('emergency_contact.name'), 'katesName']
+              ]
+            }]
+          });
+        }).then(orders => {
+          expect(orders[0].User.getDataValue('katesName')).to.equal('kate');
+        });
+      });
     });
   }
 });

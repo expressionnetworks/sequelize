@@ -15,6 +15,14 @@ const Promise = current.Promise;
 const AssociationError = require(__dirname + '/../../../lib/errors').AssociationError;
 
 describe(Support.getTestDialectTeaser('belongsToMany'), () => {
+  it('throws when invalid model is passed', () => {
+    const User = current.define('User');
+
+    expect(() => {
+      User.belongsToMany();
+    }).to.throw('User.belongsToMany called with something that\'s not a subclass of Sequelize.Model');
+  });
+
   it('should not inherit scopes from parent to join table', () => {
     const A = current.define('a'),
       B = current.define('b', {}, {
@@ -37,7 +45,7 @@ describe(Support.getTestDialectTeaser('belongsToMany'), () => {
     const AB = current.model('AB');
 
     expect(AB.options.defaultScope).to.deep.equal({});
-    expect(AB.options.scopes).to.have.length(0);
+    expect(AB.options.scopes).to.deep.equal({});
   });
 
   it('should not inherit validations from parent to join table', () => {
@@ -99,7 +107,7 @@ describe(Support.getTestDialectTeaser('belongsToMany'), () => {
       const errorFunction2 = User.belongsToMany.bind(User, Task, { through: undefined });
       const errorFunction3 = User.belongsToMany.bind(User, Task, { through: null });
       for (const errorFunction of [errorFunction1, errorFunction2, errorFunction3]) {
-        expect(errorFunction).to.throw(AssociationError, 'belongsToMany must be given a through option, either a string or a model');
+        expect(errorFunction).to.throw(AssociationError, `${User.name}.belongsToMany(${Task.name}) requires through option, pass either a string or a model`);
       }
     });
     it('throws an AssociationError for a self-association defined without an alias', () => {
@@ -584,6 +592,65 @@ describe(Support.getTestDialectTeaser('belongsToMany'), () => {
       expect(Group.associations.MyUsers.through.model.rawAttributes.UserId.onDelete).to.equal('SET NULL');
       expect(Group.associations.MyUsers.through.model.rawAttributes.GroupId.onUpdate).to.equal('SET NULL');
       expect(Group.associations.MyUsers.through.model.rawAttributes.GroupId.onDelete).to.equal('RESTRICT');
+    });
+  });
+  describe('association hooks', () => {
+    beforeEach(function() {
+      this.Projects = this.sequelize.define('Project', { title: DataTypes.STRING });
+      this.Tasks = this.sequelize.define('Task', { title: DataTypes.STRING });
+    });
+    describe('beforeBelongsToManyAssociate', () => {
+      it('should trigger', function() {
+        const beforeAssociate = sinon.spy();
+        this.Projects.beforeAssociate(beforeAssociate);
+        this.Projects.belongsToMany(this.Tasks, {through: 'projects_and_tasks', hooks: true});
+
+        const beforeAssociateArgs = beforeAssociate.getCall(0).args;
+
+        expect(beforeAssociate).to.have.been.called;
+        expect(beforeAssociateArgs.length).to.equal(2);
+
+        const firstArg = beforeAssociateArgs[0];
+        expect(Object.keys(firstArg).join()).to.equal('source,target,type');
+        expect(firstArg.source).to.equal(this.Projects);
+        expect(firstArg.target).to.equal(this.Tasks);
+        expect(firstArg.type.name).to.equal('BelongsToMany');
+
+        expect(beforeAssociateArgs[1].sequelize.constructor.name).to.equal('Sequelize');
+      });
+      it('should not trigger association hooks', function() {
+        const beforeAssociate = sinon.spy();
+        this.Projects.beforeAssociate(beforeAssociate);
+        this.Projects.belongsToMany(this.Tasks, {through: 'projects_and_tasks', hooks: false});
+        expect(beforeAssociate).to.not.have.been.called;
+      });
+    });
+    describe('afterBelongsToManyAssociate', () => {
+      it('should trigger', function() {
+        const afterAssociate = sinon.spy();
+        this.Projects.afterAssociate(afterAssociate);
+        this.Projects.belongsToMany(this.Tasks, {through: 'projects_and_tasks', hooks: true});
+
+        const afterAssociateArgs = afterAssociate.getCall(0).args;
+
+        expect(afterAssociate).to.have.been.called;
+        expect(afterAssociateArgs.length).to.equal(2);
+
+        const firstArg = afterAssociateArgs[0];
+        expect(Object.keys(firstArg).join()).to.equal('source,target,type,association');
+        expect(firstArg.source).to.equal(this.Projects);
+        expect(firstArg.target).to.equal(this.Tasks);
+        expect(firstArg.type.name).to.equal('BelongsToMany');
+        expect(firstArg.association.constructor.name).to.equal('BelongsToMany');
+
+        expect(afterAssociateArgs[1].sequelize.constructor.name).to.equal('Sequelize');
+      });
+      it('should not trigger association hooks', function() {
+        const afterAssociate = sinon.spy();
+        this.Projects.afterAssociate(afterAssociate);
+        this.Projects.belongsToMany(this.Tasks, {through: 'projects_and_tasks', hooks: false});
+        expect(afterAssociate).to.not.have.been.called;
+      });
     });
   });
 });

@@ -2,6 +2,7 @@
 
 const chai = require('chai'),
   Sequelize = require('../../../index'),
+  Op = Sequelize.Op,
   expect = chai.expect,
   Support = require(__dirname + '/../support');
 
@@ -19,7 +20,7 @@ describe(Support.getTestDialectTeaser('Model'), () => {
             attributes: ['other_value', 'access_level'],
             where: {
               access_level: {
-                lte: 5
+                [Op.lte]: 5
               }
             }
           },
@@ -49,6 +50,9 @@ describe(Support.getTestDialectTeaser('Model'), () => {
               },
               access_level: 5
             }
+          },
+          like_t: {
+            where: Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('username')), 'LIKE', '%t%')
           }
         }
       });
@@ -105,6 +109,13 @@ describe(Support.getTestDialectTeaser('Model'), () => {
           expect(records[0].get('access_level')).to.equal(3);
           expect(records[1].get('access_level')).to.equal(3);
           return this.ScopeMe.scope('issue8473').findAll();
+        });
+    });
+
+    it('should not throw error with sequelize.where', function() {
+      return this.ScopeMe.scope('like_t').findAll()
+        .then(records => {
+          expect(records).to.have.length(2);
         });
     });
   });
